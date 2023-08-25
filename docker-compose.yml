@@ -1,0 +1,76 @@
+version: '3'
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    network_mode: host
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik-data/traefik.yml:/traefik.yml:ro
+      - ./traefik-data/acme.json:/acme.json
+      - ./traefik-data/configurations:/configurations
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.traefik-secure.entrypoints=websecure"
+      - "traefik.http.routers.traefik-secure.rule=Host(``)"
+      - "traefik.http.routers.traefik-secure.middlewares=user-auth@file"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+      
+  homeassistant:
+      container_name: homeassistant
+      network_mode: "host"
+      image: "ghcr.io/home-assistant/home-assistant:stable"
+      volumes:
+       - ./config:/config
+       - /etc/localtime:/etc/localtime:ro
+      restart: unless-stopped
+      privileged: true
+      labels:
+        - "traefik.http.routers.homeassistant.rule=Host(``)"
+        - "traefik.http.services.homeassistant.loadbalancer.server.port=8123"
+        - "traefik.enable=true"
+        
+  homebridge:
+      image: oznu/homebridge:latest
+      restart: always
+      network_mode: host
+      volumes:
+        - ./volumes/homebridge:/homebridge
+      logging:
+        driver: json-file
+        options:
+          max-size: "10mb"
+          max-file: "1"
+      labels:
+        - "traefik.http.routers.bridge.rule=Host(``)"
+        - "traefik.http.services.bridge.loadbalancer.server.port=8581"
+        - "traefik.enable=true"
+        
+  node-red:
+    image: nodered/node-red:latest
+    environment:
+      - TZ=Europe/Amsterdam
+    volumes:
+      - node-red-data:/data
+    labels:
+        - "traefik.http.routers.node.rule=Host(``)"
+        - "traefik.http.services.node.loadbalancer.server.port=1880"
+        - "traefik.enable=true"
+        - "traefik.http.routers.node.middlewares=user-auth@file"
+
+  cloudflare-ddns:
+    image: oznu/cloudflare-ddns:latest
+    restart: always
+    environment:
+      - API_KEY=
+      - ZONE=
+      - SUBDOMAIN=
+      - PROXIED=true
+
+volumes:
+  node-red-data:
